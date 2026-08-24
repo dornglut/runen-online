@@ -7,5 +7,6 @@ The specification defines RunenOnline semantics. Core control-plane semantics ar
 Implementation packages, provider behavior, RunenNet behavior, Runenwerk behavior, roadmap items, and research records are non-normative unless incorporated through an explicit specification revision.
 
 - [Specification conventions](conventions.md)
+- [Core identity and external principal trust](core/identity.md)
 
 Semantic areas not linked from this index are not defined by this revision.
