@@ -8,5 +8,8 @@ Implementation packages, provider behavior, RunenNet behavior, Runenwerk behavio
 
 - [Specification conventions](conventions.md)
 - [Core identity and external principal trust](core/identity.md)
+- [Core control-plane time and deadlines](core/time.md)
+- [Assignment lifecycle](assignment/lifecycle.md)
+- [Admission grants](admission/grant.md)
 
 Semantic areas not linked from this index are not defined by this revision.
