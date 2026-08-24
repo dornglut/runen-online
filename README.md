@@ -14,4 +14,8 @@ RunenNet is a sibling standalone framework for realtime multiplayer networking. 
 - [Repository testing](TESTING.md) — canonical mechanical validation.
 - [Documentation architecture](docs/documentation-architecture.md) — documentation ownership and dependency direction.
 
-Organization contribution and security defaults are maintained by [`dornglut/.github`](https://github.com/dornglut/.github). RunenOnline is dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
+Organization contribution and security defaults are maintained by [`dornglut/.github`](https://github.com/dornglut/.github).
+
+## License
+
+RunenOnline is available under the [GNU Affero General Public License v3.0 only](LICENSE). A separate commercial license may be available from copyright holder(s) authorized to grant it; see [LICENSING.md](LICENSING.md).
