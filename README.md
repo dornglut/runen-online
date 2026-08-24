@@ -2,8 +2,16 @@
 
 RunenOnline is a standalone, provider-neutral Rust framework for online-game control-plane semantics outside the realtime multiplayer networking core.
 
-The cross-repository boundary with RunenNet is defined by [Dornglut Engineering ADR 0006](https://github.com/dornglut/engineering/blob/main/adrs/0006-separate-realtime-networking-from-online-control-plane.md).
+Maturity: provisional pre-1.0 authority and interfaces; semantics and public APIs are not yet stable.
 
-The repository is being established under [RO0 — authority, control-plane boundary, and repository architecture](https://github.com/dornglut/runen-online/issues/1).
+RunenNet is a sibling standalone framework for realtime multiplayer networking. Runenwerk and game/server applications are downstream consumers and integration hosts, not RunenOnline semantic authority.
 
-No backend provider, database, service transport, RunenNet integration, Runenwerk integration, or existing product behavior is authoritative here unless and until its contract is deliberately accepted by RunenOnline.
+## Repository authority
+
+- [Specification](spec/README.md) — normative RunenOnline semantics.
+- [Repository architecture](ARCHITECTURE.md) — package and dependency boundaries.
+- [Roadmap](ROADMAP.md) — sequencing and acceptance gates.
+- [Repository testing](TESTING.md) — canonical mechanical validation.
+- [Documentation architecture](docs/documentation-architecture.md) — documentation ownership and dependency direction.
+
+Organization contribution and security defaults are maintained by [`dornglut/.github`](https://github.com/dornglut/.github). RunenOnline is dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
