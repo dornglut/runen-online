@@ -17,9 +17,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use jsonwebtoken::jwk::{
-    AlgorithmParameters, JwkSet, KeyAlgorithm, KeyOperations, PublicKeyUse,
-};
+use jsonwebtoken::jwk::{AlgorithmParameters, JwkSet, KeyAlgorithm, KeyOperations, PublicKeyUse};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use runen_online::{Authority, AuthorityError, VerifiedExternalPrincipal};
 use serde::Deserialize;
@@ -74,7 +72,9 @@ pub enum VerificationError {
 impl fmt::Display for VerificationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidConfiguration => formatter.write_str("invalid OIDC verifier configuration"),
+            Self::InvalidConfiguration => {
+                formatter.write_str("invalid OIDC verifier configuration")
+            }
             Self::InputTooLarge(BoundedInput::IdToken) => {
                 formatter.write_str("ID token exceeds configured byte bound")
             }

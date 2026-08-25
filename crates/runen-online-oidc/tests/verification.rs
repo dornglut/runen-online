@@ -109,7 +109,10 @@ fn adapter_verification_does_not_create_or_associate_player_state() {
         authority.associate_principal(&player, &principal).unwrap(),
         AssociationOutcome::Associated
     );
-    assert_eq!(authority.resolve_principal(&principal).unwrap(), Some(player));
+    assert_eq!(
+        authority.resolve_principal(&principal).unwrap(),
+        Some(player)
+    );
 }
 
 #[test]
