@@ -1,5 +1,5 @@
 use runen_online::{
-    AdmissionGrantState, AssociationOutcome, AssignmentResolutionOutcome, AssignmentState,
+    AdmissionGrantState, AssignmentResolutionOutcome, AssignmentState, AssociationOutcome,
     Authority, AuthorityDomainHandle, AuthorityError, AuthorityLimits, EndOutcome,
     LogicalDestinationHandle, RedemptionOutcome, TimeDomainHandle, TrustedTime,
 };
@@ -58,12 +58,16 @@ fn direct_assignment_and_admission() -> Result<(), AuthorityError> {
 
     // Credential verification is deliberately outside RunenOnline. The host
     // supplies evidence that it has already verified.
-    let principal = authority.accept_verified_external_principal(TRUSTED_ISSUER, b"direct-player")?;
+    let principal =
+        authority.accept_verified_external_principal(TRUSTED_ISSUER, b"direct-player")?;
     assert_eq!(
         authority.associate_principal(&player, &principal)?,
         AssociationOutcome::Associated
     );
-    assert_eq!(authority.resolve_principal(&principal)?, Some(player.clone()));
+    assert_eq!(
+        authority.resolve_principal(&principal)?,
+        Some(player.clone())
+    );
 
     // Destination selection and the decision to establish a directly Usable
     // Assignment are host/application policy.
@@ -115,12 +119,21 @@ fn optional_matchmaking_composition() -> Result<(), AuthorityError> {
     let committed = authority.committed_match(&match_id)?;
 
     assert_eq!(committed.id(), &match_id);
-    assert_eq!(committed.roster(), [first.clone(), second.clone()].as_slice());
+    assert_eq!(
+        committed.roster(),
+        [first.clone(), second.clone()].as_slice()
+    );
     assert_eq!(committed.contributions().len(), 2);
     assert_eq!(committed.contributions()[0].request_id(), &first_request);
-    assert_eq!(committed.contributions()[0].cohort(), std::slice::from_ref(&first));
+    assert_eq!(
+        committed.contributions()[0].cohort(),
+        std::slice::from_ref(&first)
+    );
     assert_eq!(committed.contributions()[1].request_id(), &second_request);
-    assert_eq!(committed.contributions()[1].cohort(), std::slice::from_ref(&second));
+    assert_eq!(
+        committed.contributions()[1].cohort(),
+        std::slice::from_ref(&second)
+    );
 
     // This Match-to-Assignment composition is example host policy only. It is
     // not a RunenOnline cardinality rule or mandatory workflow.
@@ -141,8 +154,7 @@ fn optional_matchmaking_composition() -> Result<(), AuthorityError> {
 
     // Grant issuance is also host policy. The example chooses one grant per
     // matched player without making that a portable Match/Assignment rule.
-    let first_grant =
-        authority.issue_admission_grant(&first, &assignment, &placement_time, 25)?;
+    let first_grant = authority.issue_admission_grant(&first, &assignment, &placement_time, 25)?;
     let second_grant =
         authority.issue_admission_grant(&second, &assignment, &placement_time, 25)?;
 
@@ -159,9 +171,7 @@ fn optional_matchmaking_composition() -> Result<(), AuthorityError> {
 
     let after_end = at(&authority, 6);
     assert_eq!(
-        authority
-            .admission_grant(&first_grant, &after_end)?
-            .state(),
+        authority.admission_grant(&first_grant, &after_end)?.state(),
         AdmissionGrantState::Redeemed
     );
     assert_eq!(
