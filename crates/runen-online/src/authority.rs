@@ -412,12 +412,7 @@ impl Authority {
         let id = AdmissionGrantId::from_parts(self.domain.clone(), local);
         self.admission_grants.insert(
             id.clone(),
-            AdmissionGrantRecord::new(
-                id.clone(),
-                player.clone(),
-                assignment.clone(),
-                deadline,
-            ),
+            AdmissionGrantRecord::new(id.clone(), player.clone(), assignment.clone(), deadline),
         );
         self.live_grants_by_player
             .entry(player.clone())
@@ -517,9 +512,7 @@ impl Authority {
             ));
         }
         if self.match_requests.len() >= self.limits.max_match_requests {
-            return Err(AuthorityError::ResourceLimit(
-                ResourceLimit::MatchRequests,
-            ));
+            return Err(AuthorityError::ResourceLimit(ResourceLimit::MatchRequests));
         }
 
         // Validate the requested cohort fully before any lazy-expiry
@@ -645,7 +638,7 @@ impl Authority {
             let deadline = match &record.state {
                 MatchRequestState::Pending { deadline } => *deadline,
                 MatchRequestState::Matched(_) | MatchRequestState::Ended => {
-                    return Err(AuthorityError::Terminal)
+                    return Err(AuthorityError::Terminal);
                 }
             };
             selected.push((request.clone(), record.cohort.clone(), deadline));
@@ -965,14 +958,13 @@ impl Authority {
         cohort: &[PlayerId],
     ) {
         for player in cohort {
-            let remove_entry = if let Some(requests) =
-                self.pending_match_requests_by_player.get_mut(player)
-            {
-                requests.remove(request);
-                requests.is_empty()
-            } else {
-                false
-            };
+            let remove_entry =
+                if let Some(requests) = self.pending_match_requests_by_player.get_mut(player) {
+                    requests.remove(request);
+                    requests.is_empty()
+                } else {
+                    false
+                };
             if remove_entry {
                 self.pending_match_requests_by_player.remove(player);
             }
