@@ -124,9 +124,9 @@ Only the subsequent explicit `Session::admit_new` may create the new RunenNet pa
 
 The reverse separation should also be visible: an Established RunenNet protocol negotiation alone leaves RunenOnline grant state untouched and creates no RunenOnline identity or assignment authority.
 
-## Failure ordering
+## Failure ordering and non-transactional boundary
 
-RO5B should prove at least one failed pre-admission path:
+RO5B should prove a failed pre-redemption path:
 
 ```text
 Assignment ends before grant redemption
@@ -135,9 +135,21 @@ Assignment ends before grant redemption
 -> RunenNet session remains without that participant membership
 ```
 
-The proof must not invent a shared transactional commit between RunenOnline redemption and RunenNet admission. RO5 is an in-process composition proof, not a distributed transaction or recovery protocol.
+RO5B must also prove the opposite failure ordering because redemption and network admission are **two distinct semantic commits**:
 
-A later remote-service realization must separately address ambiguous failure between these two semantic commits if required.
+```text
+RunenOnline redemption succeeds
+-> RunenNet Session::admit_new fails
+-> RunenOnline redemption remains committed
+-> grant does not become redeemable again
+-> no synthetic rollback is applied to either framework
+```
+
+The admission failure may be induced deterministically by an already-used ParticipantId, a full membership partition, or another existing RunenNet rejection. The proof should choose the smallest case that does not require changing either framework.
+
+The host may perform ordinary prechecks to reduce such failures, but RO5 must not imply that prechecks create atomicity across the two frameworks. A failed RunenNet admission after successful redemption is an application-level partial-progress condition that later production integration may need to recover or compensate according to separately accepted policy.
+
+RO5 therefore must not invent a shared transaction, rollback hook, or cross-framework commit protocol. A later remote-service realization must separately address ambiguous failure between these two semantic commits if required.
 
 ## Post-admission lifecycle separation
 
@@ -199,22 +211,28 @@ The executable proof should contain testable functions and cover at minimum:
    - redemption fails;
    - no participant membership is created.
 
-3. **Post-admission independence**
+3. **Admission failure does not roll back redemption**
+   - redemption commits successfully;
+   - RunenNet admission is made to fail deterministically;
+   - grant remains Redeemed/AlreadyRedeemed;
+   - no participant membership is created by the failed admission.
+
+4. **Post-admission independence**
    - Assignment ends after successful redemption/admission;
    - redeemed grant remains redeemed;
    - RunenNet participant remains Bound until explicit networking/game policy changes it.
 
-4. **Recovery is RunenNet lifecycle, not grant replay**
+5. **Recovery is RunenNet lifecycle, not grant replay**
    - connection loss retains membership;
    - replay of the grant reports the already-committed redemption rather than fresh authorization;
    - replacement connection negotiates;
    - `bind_replacement` rebinds the same ParticipantId without a second grant redemption.
 
-5. **No hidden framework mutation**
+6. **No hidden framework mutation**
    - protocol negotiation alone does not alter RunenOnline state;
    - RunenOnline redemption alone does not alter RunenNet state.
 
-The proof should expose one `run_proof()` used by both `main` and an example-local test so canonical workspace `--all-targets` validation executes the scenario.
+The proof should expose one `run_proof()` used by both `main` and a package-local test so canonical workspace `--all-targets` validation executes the scenario.
 
 ## Package and documentation changes permitted in RO5B
 
@@ -242,6 +260,7 @@ RO5B does not define:
 - connect-ticket or AdmissionGrant presentation format;
 - remote redemption/introspection transport;
 - distributed atomicity between redemption and network admission;
+- cross-framework rollback/compensation semantics;
 - PlayerId-to-ParticipantId or AssignmentId-to-SessionId serialization/cardinality;
 - reconnect credential semantics;
 - production QUIC/socket behavior;
