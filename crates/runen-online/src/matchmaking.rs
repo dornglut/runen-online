@@ -1,6 +1,6 @@
 use crate::{MatchId, MatchRequestId, PlayerId};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MatchRequestState {
     Pending { deadline: u64 },
     Matched(MatchId),
@@ -16,8 +16,8 @@ pub struct MatchRequestView {
 }
 
 impl MatchRequestView {
-    pub const fn id(&self) -> MatchRequestId {
-        self.id
+    pub const fn id(&self) -> &MatchRequestId {
+        &self.id
     }
 
     pub fn cohort(&self) -> &[PlayerId] {
@@ -28,8 +28,8 @@ impl MatchRequestView {
         &self.matching_input
     }
 
-    pub const fn state(&self) -> MatchRequestState {
-        self.state
+    pub fn state(&self) -> MatchRequestState {
+        self.state.clone()
     }
 }
 
@@ -44,10 +44,10 @@ pub(crate) struct MatchRequestRecord {
 impl MatchRequestRecord {
     pub(crate) fn view(&self) -> MatchRequestView {
         MatchRequestView {
-            id: self.id,
+            id: self.id.clone(),
             cohort: self.cohort.clone(),
             matching_input: self.matching_input.clone(),
-            state: self.state,
+            state: self.state.clone(),
         }
     }
 }
@@ -59,8 +59,8 @@ pub struct MatchContribution {
 }
 
 impl MatchContribution {
-    pub const fn request_id(&self) -> MatchRequestId {
-        self.request_id
+    pub const fn request_id(&self) -> &MatchRequestId {
+        &self.request_id
     }
 
     pub fn cohort(&self) -> &[PlayerId] {
@@ -80,8 +80,8 @@ pub struct MatchView {
 }
 
 impl MatchView {
-    pub const fn id(&self) -> MatchId {
-        self.id
+    pub const fn id(&self) -> &MatchId {
+        &self.id
     }
 
     pub fn contributions(&self) -> &[MatchContribution] {
