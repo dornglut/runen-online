@@ -1,12 +1,13 @@
 # Documentation Architecture
 
-This document owns repository documentation boundaries and dependency direction. It does not define RunenOnline semantics, project priorities, package topology, provider choices, or verification policy.
+This document owns repository documentation boundaries and dependency direction. It does not define RunenOnline semantics, project priorities, package topology, provider choices, verification policy, or support/compatibility policy.
 
 ## Artifact ownership
 
 - `spec/` — normative RunenOnline specification only;
 - `ROADMAP.md` — project sequencing and acceptance gates only;
 - `ARCHITECTURE.md` — repository package and dependency structure only;
+- `MATURITY.md` — current support/maturity/compatibility claim and criteria for strengthening that claim only; it does not own semantics, sequencing, package ownership, release mechanics, or work authorization;
 - `TESTING.md` — mechanical repository validation only;
 - `docs/architecture/` — non-normative implementation and realization design when needed;
 - `docs/verification/` — non-normative assurance and conformance strategy when needed;
