@@ -8,7 +8,7 @@ pub enum AdmissionGrantState {
     AssignmentEnded,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmissionGrantView {
     id: AdmissionGrantId,
     player: PlayerId,
@@ -17,19 +17,19 @@ pub struct AdmissionGrantView {
 }
 
 impl AdmissionGrantView {
-    pub const fn id(self) -> AdmissionGrantId {
-        self.id
+    pub const fn id(&self) -> &AdmissionGrantId {
+        &self.id
     }
 
-    pub const fn player(self) -> PlayerId {
-        self.player
+    pub const fn player(&self) -> &PlayerId {
+        &self.player
     }
 
-    pub const fn assignment(self) -> AssignmentId {
-        self.assignment
+    pub const fn assignment(&self) -> &AssignmentId {
+        &self.assignment
     }
 
-    pub const fn state(self) -> AdmissionGrantState {
+    pub const fn state(&self) -> AdmissionGrantState {
         self.state
     }
 
@@ -54,7 +54,7 @@ pub enum RedemptionOutcome {
     AlreadyRedeemed,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct AdmissionGrantRecord {
     pub id: AdmissionGrantId,
     pub player: PlayerId,
@@ -77,7 +77,12 @@ impl AdmissionGrantRecord {
         }
     }
 
-    pub(crate) const fn view(self) -> AdmissionGrantView {
-        AdmissionGrantView::new(self.id, self.player, self.assignment, self.state)
+    pub(crate) fn view(&self) -> AdmissionGrantView {
+        AdmissionGrantView::new(
+            self.id.clone(),
+            self.player.clone(),
+            self.assignment.clone(),
+            self.state,
+        )
     }
 }
