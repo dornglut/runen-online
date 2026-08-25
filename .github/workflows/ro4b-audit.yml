@@ -1,0 +1,24 @@
+name: RO4B temporary dependency audit
+
+on:
+  push:
+    branches:
+      - ro4b-oidc-adapter
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ro4b-oidc-adapter
+          fetch-depth: 1
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Install cargo-audit
+        run: cargo +stable install cargo-audit --locked
+      - name: Audit exact lockfile
+        run: cargo +stable audit --file Cargo.lock
