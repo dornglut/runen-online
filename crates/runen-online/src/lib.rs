@@ -23,8 +23,8 @@ pub use assignment::{
 pub use authority::{AssociationOutcome, Authority, EndOutcome};
 pub use error::{AuthorityError, IdKind, InvalidInputKind, ObjectKind, ResourceLimit};
 pub use identity::{
-    AdmissionGrantId, AssignmentId, AuthorityDomainHandle, MatchId, MatchRequestId, PlayerId,
-    VerifiedExternalPrincipal,
+    AdmissionGrantId, AssignmentId, AuthorityDomainHandle, AuthorityDomainId, MatchId,
+    MatchRequestId, PlayerId, VerifiedExternalPrincipal,
 };
 pub use limits::AuthorityLimits;
 pub use matchmaking::{MatchContribution, MatchRequestState, MatchRequestView, MatchView};
