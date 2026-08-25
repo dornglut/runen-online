@@ -48,13 +48,15 @@ fn trusted_authority_count_and_bytes_cover_exact_and_one_over() {
     configured.max_trusted_external_authorities = 1;
     configured.max_external_authority_bytes = 6;
 
-    assert!(Authority::new(
-        AuthorityDomainHandle::new(),
-        TimeDomainHandle::new(),
-        configured.clone(),
-        [b"issuer".as_slice()],
-    )
-    .is_ok());
+    assert!(
+        Authority::new(
+            AuthorityDomainHandle::new(),
+            TimeDomainHandle::new(),
+            configured.clone(),
+            [b"issuer".as_slice()],
+        )
+        .is_ok()
+    );
 
     assert_eq!(
         Authority::new(
