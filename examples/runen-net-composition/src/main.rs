@@ -217,8 +217,21 @@ fn successful_handoff_and_rebind() {
             .unwrap(),
         RedemptionOutcome::AlreadyRedeemed
     );
+    assert_eq!(
+        session.membership_state(participant),
+        Some(MembershipState::Unbound { expires_at: 10 })
+    );
 
     establish_negotiation(&mut negotiation, replacement_connection);
+    assert_eq!(
+        session.membership_state(participant),
+        Some(MembershipState::Unbound { expires_at: 10 })
+    );
+    assert_eq!(
+        session.participant_for_connection(replacement_connection),
+        None
+    );
+
     session
         .bind_replacement(
             participant,
