@@ -19,7 +19,9 @@ impl LogicalDestinationHandle {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AssignmentState {
-    Pending { deadline: u64 },
+    Pending {
+        deadline: u64,
+    },
     Usable {
         destination: LogicalDestinationHandle,
     },
@@ -66,10 +68,7 @@ impl AssignmentRecord {
         }
     }
 
-    pub(crate) const fn usable(
-        id: AssignmentId,
-        destination: LogicalDestinationHandle,
-    ) -> Self {
+    pub(crate) const fn usable(id: AssignmentId, destination: LogicalDestinationHandle) -> Self {
         Self {
             id,
             state: AssignmentState::Usable { destination },
