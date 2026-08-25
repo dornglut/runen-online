@@ -173,7 +173,10 @@ fn successful_handoff_and_rebind() {
     );
     assert!(session.is_authorized(participant, first_connection));
 
-    assert_eq!(authority.end_assignment(&assignment).unwrap(), EndOutcome::Ended);
+    assert_eq!(
+        authority.end_assignment(&assignment).unwrap(),
+        EndOutcome::Ended
+    );
     assert_eq!(
         authority
             .admission_grant(&grant, &at(&authority, 3))
@@ -239,7 +242,7 @@ fn failed_authorization_does_not_admit() {
     let mut negotiation = negotiation_manager();
     establish_negotiation(&mut negotiation, connection);
 
-    let mut session = Session::new(SessionId::new(701), session_limits(2));
+    let session = Session::new(SessionId::new(701), session_limits(2));
     assert_eq!(session.live_memberships(), 0);
     assert_eq!(
         authority
@@ -249,7 +252,10 @@ fn failed_authorization_does_not_admit() {
         AdmissionGrantState::Redeemable { deadline: 20 }
     );
 
-    assert_eq!(authority.end_assignment(&assignment).unwrap(), EndOutcome::Ended);
+    assert_eq!(
+        authority.end_assignment(&assignment).unwrap(),
+        EndOutcome::Ended
+    );
     assert_eq!(
         authority.redeem_admission_grant(&grant, &at(&authority, 2)),
         Err(AuthorityError::NotUsable)
