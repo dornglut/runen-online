@@ -135,7 +135,7 @@ The minimum implementation should use:
 - one fixed unsigned integer observation value;
 - deadlines stored in that same comparison domain;
 - comparison rule `observation >= deadline` means reached;
-- **zero tolerance/leeway** in the first implementation profile.
+- **zero tolerance/leeway** in the first RO2 realization.
 
 The integer unit is host/runtime policy and is not a standardized timestamp or duration unit.
 
@@ -192,7 +192,7 @@ A later production realization may compact terminal state if it independently pr
 
 ## Finite implementation policy
 
-The first authority aggregate requires a validated finite configuration. Exact numeric values are implementation/profile policy, not normative RunenOnline constants.
+The first authority aggregate requires a validated finite configuration. Exact numeric values are RO2 implementation policy, not normative RunenOnline constants; a normative profile would require separately accepted specification authority.
 
 The configuration should cover at least:
 
