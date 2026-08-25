@@ -1,8 +1,8 @@
 use runen_online::{
-    AdmissionGrantState, AssociationOutcome, AssignmentResolutionOutcome, AssignmentState, Authority,
-    AuthorityDomainHandle, AuthorityError, AuthorityLimits, EndOutcome, InvalidInputKind,
-    LogicalDestinationHandle, MatchRequestState, RedemptionOutcome, ResourceLimit, TimeDomainHandle,
-    TrustedTime,
+    AdmissionGrantState, AssignmentResolutionOutcome, AssignmentState, AssociationOutcome,
+    Authority, AuthorityDomainHandle, AuthorityError, AuthorityLimits, EndOutcome,
+    InvalidInputKind, LogicalDestinationHandle, MatchRequestState, RedemptionOutcome,
+    ResourceLimit, TimeDomainHandle, TrustedTime,
 };
 
 fn limits() -> AuthorityLimits {
@@ -181,11 +181,7 @@ fn pending_assignment_resolves_once_and_expiry_is_irreversible() {
         Ok(AssignmentResolutionOutcome::AlreadyUsable)
     );
     assert_eq!(
-        authority.resolve_assignment(
-            &assignment,
-            LogicalDestinationHandle::new(8),
-            &before,
-        ),
+        authority.resolve_assignment(&assignment, LogicalDestinationHandle::new(8), &before,),
         Err(AuthorityError::Conflict)
     );
 
@@ -225,13 +221,18 @@ fn assignment_end_and_resolution_have_one_terminal_winner_in_either_order() {
 
     let mut resolve_first = authority();
     let now = at(&resolve_first, 1);
-    let pending = resolve_first.establish_pending_assignment(&now, 10).unwrap();
+    let pending = resolve_first
+        .establish_pending_assignment(&now, 10)
+        .unwrap();
     let later = at(&resolve_first, 2);
     assert_eq!(
         resolve_first.resolve_assignment(&pending, destination, &later),
         Ok(AssignmentResolutionOutcome::Resolved)
     );
-    assert_eq!(resolve_first.end_assignment(&pending), Ok(EndOutcome::Ended));
+    assert_eq!(
+        resolve_first.end_assignment(&pending),
+        Ok(EndOutcome::Ended)
+    );
 }
 
 #[test]
@@ -376,9 +377,11 @@ fn live_grant_quota_reconciles_lazy_expiry_before_rejecting_new_work() {
     // No explicit read/redeem of the old grant occurs. Issuance itself must
     // reconcile its lazy expiry before applying the live fan-out quota.
     let boundary = at(&authority, 5);
-    assert!(authority
-        .issue_admission_grant(&player, &assignment, &boundary, 10)
-        .is_ok());
+    assert!(
+        authority
+            .issue_admission_grant(&player, &assignment, &boundary, 10)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -462,13 +465,14 @@ fn match_request_is_immutable_bounded_and_same_domain() {
 }
 
 #[test]
-fn match_request_rejects_empty_duplicate_and_oversized_input() {
+fn match_request_rejects_empty_duplicate_oversized_cohort_and_input() {
     let mut configured = limits();
-    configured.max_match_request_cohort = 1;
+    configured.max_match_request_cohort = 2;
     configured.max_matchmaking_input_bytes = 3;
     let mut authority = authority_with_limits(configured);
     let player = authority.create_player().unwrap();
     let other = authority.create_player().unwrap();
+    let third = authority.create_player().unwrap();
     let now = at(&authority, 1);
 
     assert_eq!(
@@ -479,12 +483,12 @@ fn match_request_rejects_empty_duplicate_and_oversized_input() {
     );
     assert_eq!(
         authority.establish_match_request(&[player.clone(), player.clone()], b"", &now, 10),
-        Err(AuthorityError::ResourceLimit(
-            ResourceLimit::MatchRequestCohort
+        Err(AuthorityError::InvalidInput(
+            InvalidInputKind::DuplicatePlayer
         ))
     );
     assert_eq!(
-        authority.establish_match_request(&[player.clone(), other], b"", &now, 10),
+        authority.establish_match_request(&[player.clone(), other, third], b"", &now, 10),
         Err(AuthorityError::ResourceLimit(
             ResourceLimit::MatchRequestCohort
         ))
@@ -511,9 +515,11 @@ fn pending_request_quota_reconciles_lazy_expiry_before_rejecting_new_work() {
     // No explicit observation of the old request occurs before establishing a
     // new one. The quota check must materialize the reached deadline itself.
     let boundary = at(&authority, 5);
-    assert!(authority
-        .establish_match_request(std::slice::from_ref(&player), b"next", &boundary, 10)
-        .is_ok());
+    assert!(
+        authority
+            .establish_match_request(std::slice::from_ref(&player), b"next", &boundary, 10)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -534,11 +540,17 @@ fn match_commit_is_all_or_nothing_exact_and_immutable() {
         .unwrap();
 
     assert_eq!(
-        authority.match_request(&left, &commit_time).unwrap().state(),
+        authority
+            .match_request(&left, &commit_time)
+            .unwrap()
+            .state(),
         MatchRequestState::Matched(matched.clone())
     );
     assert_eq!(
-        authority.match_request(&right, &commit_time).unwrap().state(),
+        authority
+            .match_request(&right, &commit_time)
+            .unwrap()
+            .state(),
         MatchRequestState::Matched(matched.clone())
     );
     let view = authority.committed_match(&matched).unwrap();
@@ -576,11 +588,17 @@ fn duplicate_and_overlapping_candidates_reject_without_consumption() {
         ))
     );
     assert!(matches!(
-        authority.match_request(&left, &commit_time).unwrap().state(),
+        authority
+            .match_request(&left, &commit_time)
+            .unwrap()
+            .state(),
         MatchRequestState::Pending { .. }
     ));
     assert!(matches!(
-        authority.match_request(&right, &commit_time).unwrap().state(),
+        authority
+            .match_request(&right, &commit_time)
+            .unwrap()
+            .state(),
         MatchRequestState::Pending { .. }
     ));
 }
@@ -604,7 +622,10 @@ fn expired_match_candidate_materializes_expiry_but_consumes_none() {
         Err(AuthorityError::Expired)
     );
     assert_eq!(
-        authority.match_request(&expired, &boundary).unwrap().state(),
+        authority
+            .match_request(&expired, &boundary)
+            .unwrap()
+            .state(),
         MatchRequestState::Ended
     );
     assert_eq!(
@@ -621,10 +642,7 @@ fn match_request_end_and_commit_have_one_terminal_winner_in_either_order() {
     let request = end_first
         .establish_match_request(std::slice::from_ref(&player), b"", &now, 10)
         .unwrap();
-    assert_eq!(
-        end_first.end_match_request(&request),
-        Ok(EndOutcome::Ended)
-    );
+    assert_eq!(end_first.end_match_request(&request), Ok(EndOutcome::Ended));
     let later = at(&end_first, 2);
     assert_eq!(
         end_first.commit_match(std::slice::from_ref(&request), &later),
@@ -646,7 +664,10 @@ fn match_request_end_and_commit_have_one_terminal_winner_in_either_order() {
         Ok(EndOutcome::AlreadyTerminal)
     );
     assert_eq!(
-        commit_first.match_request(&request, &later).unwrap().state(),
+        commit_first
+            .match_request(&request, &later)
+            .unwrap()
+            .state(),
         MatchRequestState::Matched(matched)
     );
 }
@@ -707,10 +728,9 @@ fn overlapping_match_candidates_have_exactly_one_winner_in_either_order() {
 }
 
 #[test]
-fn match_candidate_roster_and_retained_match_limits_are_enforced() {
+fn match_candidate_count_and_retained_match_limits_are_enforced() {
     let mut configured = limits();
     configured.max_match_candidate_requests = 1;
-    configured.max_match_roster_players = 1;
     configured.max_matches = 1;
     let mut authority = authority_with_limits(configured);
     let a = authority.create_player().unwrap();
@@ -736,6 +756,39 @@ fn match_candidate_roster_and_retained_match_limits_are_enforced() {
     assert_eq!(
         authority.commit_match(std::slice::from_ref(&b_req), &later),
         Err(AuthorityError::ResourceLimit(ResourceLimit::Matches))
+    );
+}
+
+#[test]
+fn match_roster_limit_rejects_without_consuming_any_request() {
+    let mut configured = limits();
+    configured.max_match_candidate_requests = 2;
+    configured.max_match_roster_players = 1;
+    let mut authority = authority_with_limits(configured);
+    let a = authority.create_player().unwrap();
+    let b = authority.create_player().unwrap();
+    let now = at(&authority, 1);
+    let a_req = authority
+        .establish_match_request(std::slice::from_ref(&a), b"", &now, 10)
+        .unwrap();
+    let b_req = authority
+        .establish_match_request(std::slice::from_ref(&b), b"", &now, 10)
+        .unwrap();
+    let later = at(&authority, 2);
+
+    assert_eq!(
+        authority.commit_match(&[a_req.clone(), b_req.clone()], &later),
+        Err(AuthorityError::ResourceLimit(
+            ResourceLimit::MatchRosterPlayers
+        ))
+    );
+    assert_eq!(
+        authority.match_request(&a_req, &later).unwrap().state(),
+        MatchRequestState::Pending { deadline: 10 }
+    );
+    assert_eq!(
+        authority.match_request(&b_req, &later).unwrap().state(),
+        MatchRequestState::Pending { deadline: 10 }
     );
 }
 
