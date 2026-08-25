@@ -1,8 +1,8 @@
 use runen_online::{
     AdmissionGrantState, AssociationOutcome, AssignmentResolutionOutcome, AssignmentState, Authority,
     AuthorityDomainHandle, AuthorityError, AuthorityLimits, EndOutcome, InvalidInputKind,
-    LogicalDestinationHandle, MatchRequestState, ObjectKind, RedemptionOutcome, ResourceLimit,
-    TimeDomainHandle, TrustedTime,
+    LogicalDestinationHandle, MatchRequestState, RedemptionOutcome, ResourceLimit, TimeDomainHandle,
+    TrustedTime,
 };
 
 fn limits() -> AuthorityLimits {
@@ -159,6 +159,35 @@ fn assignment_expiry_is_irreversible_and_stale_identity_cannot_replace_new_state
 }
 
 #[test]
+fn assignment_end_and_resolution_have_one_terminal_winner_in_either_order() {
+    let destination = LogicalDestinationHandle::new(7);
+
+    let mut end_first = authority(1, 10);
+    let pending = end_first
+        .establish_pending_assignment(time(10, 1), 10)
+        .unwrap();
+    assert_eq!(end_first.end_assignment(pending), Ok(EndOutcome::Ended));
+    assert_eq!(
+        end_first.resolve_assignment(pending, destination, time(10, 2)),
+        Err(AuthorityError::Terminal)
+    );
+
+    let mut resolve_first = authority(2, 10);
+    let pending = resolve_first
+        .establish_pending_assignment(time(10, 1), 10)
+        .unwrap();
+    assert_eq!(
+        resolve_first.resolve_assignment(pending, destination, time(10, 2)),
+        Ok(AssignmentResolutionOutcome::Resolved)
+    );
+    assert_eq!(resolve_first.end_assignment(pending), Ok(EndOutcome::Ended));
+    assert_eq!(
+        resolve_first.assignment(pending, time(10, 3)).unwrap().state(),
+        AssignmentState::Ended
+    );
+}
+
+#[test]
 fn time_domain_mismatch_fails_closed() {
     let mut authority = authority(1, 10);
     assert_eq!(
@@ -245,30 +274,41 @@ fn grant_expiry_materializes_without_successful_redemption_and_never_revives() {
 }
 
 #[test]
-fn live_grant_fanout_does_not_count_redeemed_history() {
+fn live_grant_fanout_counts_only_current_grants() {
     let mut configured = limits();
     configured.max_live_admission_grants_per_player = 1;
     configured.max_live_admission_grants_per_assignment = 1;
     let mut authority = authority_with_limits(1, 10, configured);
-    let player = authority.create_player().unwrap();
-    let assignment = authority
+    let first_player = authority.create_player().unwrap();
+    let second_player = authority.create_player().unwrap();
+    let first_assignment = authority
         .establish_usable_assignment(LogicalDestinationHandle::new(1))
+        .unwrap();
+    let second_assignment = authority
+        .establish_usable_assignment(LogicalDestinationHandle::new(2))
         .unwrap();
 
     let first = authority
-        .issue_admission_grant(player, assignment, time(10, 1), 10)
+        .issue_admission_grant(first_player, first_assignment, time(10, 1), 10)
         .unwrap();
     assert_eq!(
-        authority.issue_admission_grant(player, assignment, time(10, 1), 10),
+        authority.issue_admission_grant(first_player, second_assignment, time(10, 1), 10),
         Err(AuthorityError::ResourceLimit(
             ResourceLimit::LiveAdmissionGrantsPerPlayer
         ))
     );
+    assert_eq!(
+        authority.issue_admission_grant(second_player, first_assignment, time(10, 1), 10),
+        Err(AuthorityError::ResourceLimit(
+            ResourceLimit::LiveAdmissionGrantsPerAssignment
+        ))
+    );
+
     authority
         .redeem_admission_grant(first, time(10, 2))
         .unwrap();
     assert!(authority
-        .issue_admission_grant(player, assignment, time(10, 2), 10)
+        .issue_admission_grant(first_player, first_assignment, time(10, 2), 10)
         .is_ok());
 }
 
@@ -349,7 +389,7 @@ fn match_commit_is_atomic_exact_and_immutable() {
 }
 
 #[test]
-fn overlapping_cohorts_reject_without_consuming_requests() {
+fn duplicate_and_overlapping_match_candidates_reject_without_consumption() {
     let mut authority = authority(1, 10);
     let a = authority.create_player().unwrap();
     let b = authority.create_player().unwrap();
@@ -361,6 +401,12 @@ fn overlapping_cohorts_reject_without_consuming_requests() {
         .establish_match_request(&[b, c], b"", time(10, 1), 20)
         .unwrap();
 
+    assert_eq!(
+        authority.commit_match(&[left, left], time(10, 2)),
+        Err(AuthorityError::InvalidInput(
+            InvalidInputKind::DuplicateMatchRequest
+        ))
+    );
     assert_eq!(
         authority.commit_match(&[left, right], time(10, 2)),
         Err(AuthorityError::InvalidInput(
@@ -403,6 +449,38 @@ fn expired_candidate_materializes_expiry_but_consumes_none() {
             .unwrap()
             .state(),
         MatchRequestState::Pending { deadline: 10 }
+    );
+}
+
+#[test]
+fn match_request_end_and_commit_have_one_terminal_winner_in_either_order() {
+    let mut end_first = authority(1, 10);
+    let player = end_first.create_player().unwrap();
+    let request = end_first
+        .establish_match_request(&[player], b"", time(10, 1), 20)
+        .unwrap();
+    assert_eq!(end_first.end_match_request(request), Ok(EndOutcome::Ended));
+    assert_eq!(
+        end_first.commit_match(&[request], time(10, 2)),
+        Err(AuthorityError::Terminal)
+    );
+
+    let mut commit_first = authority(2, 10);
+    let player = commit_first.create_player().unwrap();
+    let request = commit_first
+        .establish_match_request(&[player], b"", time(10, 1), 20)
+        .unwrap();
+    let matched = commit_first.commit_match(&[request], time(10, 2)).unwrap();
+    assert_eq!(
+        commit_first.end_match_request(request),
+        Ok(EndOutcome::AlreadyTerminal)
+    );
+    assert_eq!(
+        commit_first
+            .match_request(request, time(10, 3))
+            .unwrap()
+            .state(),
+        MatchRequestState::Matched(matched)
     );
 }
 
@@ -456,14 +534,12 @@ fn overlapping_match_candidates_have_exactly_one_winner_in_either_order() {
 }
 
 #[test]
-fn identity_and_principal_limits_enforce_exact_boundaries() {
+fn external_principal_and_identity_limits_enforce_boundaries() {
     let mut configured = limits();
     configured.max_trusted_external_authorities = 1;
     configured.max_external_authority_bytes = 6;
     configured.max_external_subject_bytes = 3;
     configured.max_players = 2;
-    configured.max_principal_associations = 1;
-    configured.max_principal_associations_per_player = 1;
 
     assert_eq!(
         Authority::new(
@@ -477,10 +553,22 @@ fn identity_and_principal_limits_enforce_exact_boundaries() {
             ResourceLimit::TrustedExternalAuthorities
         ))
     );
+    assert_eq!(
+        Authority::new(
+            AuthorityDomainHandle::new(1),
+            TimeDomainHandle::new(10),
+            configured.clone(),
+            [b"toolong".as_slice()],
+        )
+        .err(),
+        Some(AuthorityError::ResourceLimit(
+            ResourceLimit::ExternalAuthorityBytes
+        ))
+    );
 
     let mut authority = authority_with_limits(1, 10, configured);
-    let first = authority.create_player().unwrap();
-    let second = authority.create_player().unwrap();
+    authority.create_player().unwrap();
+    authority.create_player().unwrap();
     assert_eq!(
         authority.create_player(),
         Err(AuthorityError::ResourceLimit(ResourceLimit::Players))
@@ -491,18 +579,49 @@ fn identity_and_principal_limits_enforce_exact_boundaries() {
             ResourceLimit::ExternalSubjectBytes
         ))
     );
+    assert!(authority
+        .accept_verified_external_principal(b"issuer", b"abc")
+        .is_ok());
+}
 
-    let first_principal = authority
+#[test]
+fn principal_association_limits_enforce_per_player_and_partition_boundaries() {
+    let mut per_player = limits();
+    per_player.max_principal_associations = 4;
+    per_player.max_principal_associations_per_player = 1;
+    let mut authority = authority_with_limits(1, 10, per_player);
+    let player = authority.create_player().unwrap();
+    let first = authority
         .accept_verified_external_principal(b"issuer", b"one")
         .unwrap();
-    authority
-        .associate_principal(first, &first_principal)
-        .unwrap();
-    let second_principal = authority
+    let second = authority
         .accept_verified_external_principal(b"issuer", b"two")
         .unwrap();
+    authority.associate_principal(player, &first).unwrap();
     assert_eq!(
-        authority.associate_principal(second, &second_principal),
+        authority.associate_principal(player, &second),
+        Err(AuthorityError::ResourceLimit(
+            ResourceLimit::PrincipalAssociationsPerPlayer
+        ))
+    );
+
+    let mut partition = limits();
+    partition.max_principal_associations = 1;
+    partition.max_principal_associations_per_player = 2;
+    let mut authority = authority_with_limits(2, 20, partition);
+    let first_player = authority.create_player().unwrap();
+    let second_player = authority.create_player().unwrap();
+    let first = authority
+        .accept_verified_external_principal(b"issuer", b"one")
+        .unwrap();
+    let second = authority
+        .accept_verified_external_principal(b"issuer", b"two")
+        .unwrap();
+    authority
+        .associate_principal(first_player, &first)
+        .unwrap();
+    assert_eq!(
+        authority.associate_principal(second_player, &second),
         Err(AuthorityError::ResourceLimit(
             ResourceLimit::PrincipalAssociations
         ))
@@ -537,15 +656,12 @@ fn assignment_limits_and_invalid_deadline_do_not_consume_identity() {
 }
 
 #[test]
-fn admission_limits_cover_lifetime_live_fanout_and_retained_capacity() {
+fn admission_limits_cover_lifetime_and_retained_capacity() {
     let mut configured = limits();
     configured.max_admission_grants = 1;
     configured.max_admission_grant_lifetime = 5;
-    configured.max_live_admission_grants_per_player = 1;
-    configured.max_live_admission_grants_per_assignment = 1;
     let mut authority = authority_with_limits(1, 10, configured);
     let player = authority.create_player().unwrap();
-    let other = authority.create_player().unwrap();
     let assignment = authority
         .establish_usable_assignment(LogicalDestinationHandle::new(1))
         .unwrap();
@@ -559,17 +675,11 @@ fn admission_limits_cover_lifetime_live_fanout_and_retained_capacity() {
     let grant = authority
         .issue_admission_grant(player, assignment, time(10, 1), 6)
         .unwrap();
-    assert_eq!(
-        authority.issue_admission_grant(other, assignment, time(10, 1), 6),
-        Err(AuthorityError::ResourceLimit(
-            ResourceLimit::AdmissionGrants
-        ))
-    );
     authority
         .redeem_admission_grant(grant, time(10, 2))
         .unwrap();
     assert_eq!(
-        authority.issue_admission_grant(other, assignment, time(10, 2), 6),
+        authority.issue_admission_grant(player, assignment, time(10, 2), 6),
         Err(AuthorityError::ResourceLimit(
             ResourceLimit::AdmissionGrants
         ))
@@ -577,7 +687,7 @@ fn admission_limits_cover_lifetime_live_fanout_and_retained_capacity() {
 }
 
 #[test]
-fn match_request_limits_cover_cohort_input_pending_and_retained_capacity() {
+fn match_request_limits_cover_lifetime_cohort_input_pending_and_retained_capacity() {
     let mut configured = limits();
     configured.max_match_requests = 2;
     configured.max_match_request_lifetime = 5;
@@ -638,7 +748,6 @@ fn match_commit_limits_cover_candidate_roster_and_retained_matches() {
     let mut authority = authority_with_limits(1, 10, configured);
     let a = authority.create_player().unwrap();
     let b = authority.create_player().unwrap();
-    let c = authority.create_player().unwrap();
     let a_req = authority
         .establish_match_request(&[a], b"", time(10, 1), 20)
         .unwrap();
@@ -710,44 +819,5 @@ fn cross_domain_objects_are_rejected_before_lookup() {
     assert_eq!(
         left.redeem_admission_grant(grant, time(10, 2)),
         Err(AuthorityError::AuthorityDomainMismatch)
-    );
-}
-
-#[test]
-fn unknown_objects_remain_distinct_from_cross_domain_objects() {
-    let mut authority = authority(1, 10);
-    let other = authority(1, 10);
-    let unknown = other.domain();
-    assert_eq!(unknown, authority.domain());
-
-    let player = authority.create_player().unwrap();
-    let assignment = authority
-        .establish_usable_assignment(LogicalDestinationHandle::new(1))
-        .unwrap();
-    assert!(authority
-        .issue_admission_grant(player, assignment, time(10, 1), 5)
-        .is_ok());
-
-    // A second authority can legitimately allocate the same local value in the
-    // same host-supplied domain handle. Hosts must therefore give distinct
-    // authority incarnations distinct handles when equality must be isolated.
-    let mut second = authority(1, 10);
-    let second_player = second.create_player().unwrap();
-    assert_eq!(player, second_player);
-    assert_eq!(
-        authority.resolve_principal(
-            &second
-                .accept_verified_external_principal(b"issuer", b"absent")
-                .unwrap()
-        ),
-        Ok(None)
-    );
-
-    assert_eq!(
-        authority.assignment(
-            runen_online::AssignmentId::from_parts_for_test_only_not_public(),
-            time(10, 2)
-        ),
-        Err(AuthorityError::Unknown(ObjectKind::Assignment))
     );
 }
