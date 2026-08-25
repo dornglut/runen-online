@@ -1,0 +1,29 @@
+name: RO5B Generate Lockfile
+
+on:
+  push:
+    branches:
+      - ro5b-runen-net-composition-proof
+
+permissions:
+  contents: write
+
+jobs:
+  generate-lockfile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ro5b-runen-net-composition-proof
+      - name: Generate Cargo lockfile
+        run: cargo generate-lockfile
+      - name: Commit generated lockfile
+        run: |
+          if git diff --quiet -- Cargo.lock; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "RO5B: generate pinned composition lockfile"
+          git push origin HEAD:ro5b-runen-net-composition-proof
