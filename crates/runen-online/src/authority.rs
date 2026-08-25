@@ -86,9 +86,12 @@ impl Authority {
                         ResourceLimit::TrustedExternalAuthorities,
                     ));
                 }
-                supplied_count = supplied_count.checked_add(1).ok_or(
-                    AuthorityError::ResourceLimit(ResourceLimit::TrustedExternalAuthorities),
-                )?;
+                supplied_count =
+                    supplied_count
+                        .checked_add(1)
+                        .ok_or(AuthorityError::ResourceLimit(
+                            ResourceLimit::TrustedExternalAuthorities,
+                        ))?;
 
                 let authority = authority.as_ref();
                 if authority.len() > limits.max_external_authority_bytes {
