@@ -136,7 +136,7 @@ impl OidcVerifier {
                 .ok_or(VerificationError::UnsupportedJwk)?;
             let decoding_key =
                 DecodingKey::from_jwk(jwk).map_err(|_| VerificationError::UnsupportedJwk)?;
-            require_rs256_modulus_size(&decoding_key)?;
+            require_rs256_public_key_shape(&decoding_key)?;
             if keys_by_id
                 .insert(Box::<str>::from(key_id), decoding_key)
                 .is_some()
@@ -261,19 +261,38 @@ fn require_rs256_verification_jwk(jwk: &jsonwebtoken::jwk::Jwk) -> Result<(), Ve
     Ok(())
 }
 
-fn require_rs256_modulus_size(key: &DecodingKey) -> Result<(), VerificationError> {
-    let DecodingKeyKind::RsaModulusExponent { n, .. } = key.kind() else {
+fn require_rs256_public_key_shape(key: &DecodingKey) -> Result<(), VerificationError> {
+    let DecodingKeyKind::RsaModulusExponent { n, e } = key.kind() else {
         return Err(VerificationError::UnsupportedJwk);
     };
-    let first_nonzero = n
-        .iter()
-        .position(|byte| *byte != 0)
-        .ok_or(VerificationError::UnsupportedJwk)?;
-    let significant = &n[first_nonzero..];
-    if significant.len() < 256 || (significant.len() == 256 && significant[0] < 0x80) {
+
+    let modulus_bits = canonical_unsigned_bit_len(n).ok_or(VerificationError::UnsupportedJwk)?;
+    if !(2048..=8192).contains(&modulus_bits) || n.last().is_none_or(|byte| byte & 1 == 0) {
         return Err(VerificationError::UnsupportedJwk);
     }
+
+    canonical_unsigned_bit_len(e).ok_or(VerificationError::UnsupportedJwk)?;
+    let exponent_at_least_three = e.len() > 1 || e.first().is_some_and(|byte| *byte >= 3);
+    if !exponent_at_least_three
+        || e.last().is_none_or(|byte| byte & 1 == 0)
+        || !unsigned_big_endian_less_than(e, n)
+    {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+
     Ok(())
+}
+
+fn canonical_unsigned_bit_len(bytes: &[u8]) -> Option<usize> {
+    let first = *bytes.first()?;
+    if first == 0 {
+        return (bytes.len() == 1).then_some(0);
+    }
+    Some((bytes.len() - 1) * 8 + (8 - first.leading_zeros() as usize))
+}
+
+fn unsigned_big_endian_less_than(left: &[u8], right: &[u8]) -> bool {
+    left.len() < right.len() || (left.len() == right.len() && left < right)
 }
 
 fn require_unexpired(
@@ -334,6 +353,26 @@ mod tests {
         );
 
         assert!(matches!(result, Err(VerificationError::UnsupportedJwk)));
+    }
+
+    #[test]
+    fn verifier_rejects_invalid_rsa_public_key_shape_before_activation() {
+        let mut modulus = vec![0x80; 256];
+        *modulus.last_mut().unwrap() = 0x81;
+
+        let invalid_exponent = DecodingKey::from_rsa_raw_components(&modulus, &[1]);
+        assert_eq!(
+            require_rs256_public_key_shape(&invalid_exponent),
+            Err(VerificationError::UnsupportedJwk)
+        );
+
+        let mut oversized_modulus = vec![0x80; 1025];
+        *oversized_modulus.last_mut().unwrap() = 0x81;
+        let oversized = DecodingKey::from_rsa_raw_components(&oversized_modulus, &[1, 0, 1]);
+        assert_eq!(
+            require_rs256_public_key_shape(&oversized),
+            Err(VerificationError::UnsupportedJwk)
+        );
     }
 
     #[test]
