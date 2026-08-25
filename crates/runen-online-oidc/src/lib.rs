@@ -395,9 +395,7 @@ mod tests {
 
         assert_eq!(claims.exp, 200.5);
         assert_eq!(claims.iat, 100.25);
-        assert!(
-            require_unexpired(UNIX_EPOCH + Duration::from_millis(200_499), claims.exp).is_ok()
-        );
+        assert!(require_unexpired(UNIX_EPOCH + Duration::from_millis(200_499), claims.exp).is_ok());
         assert_eq!(
             require_unexpired(UNIX_EPOCH + Duration::from_millis(200_500), claims.exp),
             Err(VerificationError::VerificationFailed)
