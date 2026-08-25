@@ -41,6 +41,8 @@ That crate realizes the accepted provider-neutral semantic core. Its internal id
 
 RO4 establishes one independently justified optional production adapter crate: `crates/runen-online-oidc`. It depends on `runen-online` plus its bounded OIDC/JWT cryptographic realization dependencies; `runen-online` does not depend on it. The adapter verifies already-obtained ID tokens against host-supplied static key material and hands verified issuer/subject evidence to the core trust boundary. It does not own provider discovery, HTTP, login/session flows, persistence, service transport, gameplay allocation, or portable identity semantics.
 
+RO5 adds `examples/runen-net-composition` as a non-publishable downstream proof package. It consumes both `runen-online` and an exact pinned RunenNet revision to prove game-server composition, but it is not a production integration package and establishes no reusable integration API or cross-framework semantic ownership. Neither product core depends on the proof package or on the sibling core because of it.
+
 RunenOnline does not currently ratify a multi-service topology, persistence package, generic provider package, runtime package, protocol package, or sibling-framework integration package. Creating identity, auth, lobby, matchmaking, allocation, persistence, server, protocol, adapter, provider, or service crates merely from semantic naming would make package shape precede independent build, dependency, deployment, or reuse evidence.
 
 Later implementation work may split or add packages only when accepted semantics and concrete build/dependency boundaries, deployment obligations, or independently reusable adapter/integration evidence justify that ownership.
@@ -51,9 +53,10 @@ Later implementation work may split or add packages only when accepted semantics
 - `docs/` — non-normative architecture, verification, decisions, research, and guides when real material exists;
 - `crates/runen-online/` — the standalone provider-neutral product core;
 - `crates/runen-online-oidc/` — optional bounded OIDC ID-token verification realization;
+- `examples/runen-net-composition/` — non-publishable downstream game-server composition proof;
 - `tools/` — repository tooling only;
 - future additional `crates/` or application/service packages — only after separate package ownership is accepted;
-- future `examples/` — standalone proofs and consumer-facing examples when required by accepted work.
+- future additional `examples/` — standalone proofs and consumer-facing examples when required by accepted work.
 
 ## Integration boundary
 

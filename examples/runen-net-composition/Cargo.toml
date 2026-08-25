@@ -1,0 +1,13 @@
+[package]
+name = "runen-online-runen-net-proof"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+runen-online = { path = "../../crates/runen-online" }
+runen-net = { git = "https://github.com/dornglut/runen-net", rev = "79a455945fe85933cbd2a74145a20f296f86f55c" }

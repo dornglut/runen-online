@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/runen-online", "crates/runen-online-oidc", "tools/xtask"]
+members = [
+    "crates/runen-online",
+    "crates/runen-online-oidc",
+    "examples/runen-net-composition",
+    "tools/xtask",
+]
 resolver = "2"
 
 [workspace.package]
