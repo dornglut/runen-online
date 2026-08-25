@@ -1,0 +1,404 @@
+#![forbid(unsafe_code)]
+
+//! Bounded OIDC Core ID-token verification adapter for RunenOnline.
+//!
+//! The host is responsible for obtaining ID tokens and for supplying and
+//! refreshing the static JWKS used by this verifier. This crate performs no
+//! discovery, HTTP, login-flow, persistence, service, or runtime work. A raw
+//! ID token is provider credential input; it is not a standardized RunenOnline
+//! wire credential.
+//!
+//! Successful verification maps only the exact OIDC `iss` + `sub` pair through
+//! [`runen_online::Authority::accept_verified_external_principal`]. The owning
+//! RunenOnline authority therefore remains responsible for deciding whether the
+//! issuer is trusted and whether the mapped representations fit its bounds.
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use jsonwebtoken::jwk::{AlgorithmParameters, JwkSet, KeyAlgorithm, KeyOperations, PublicKeyUse};
+use jsonwebtoken::{Algorithm, DecodingKey, DecodingKeyKind, Validation, decode, decode_header};
+use runen_online::{Authority, AuthorityError, VerifiedExternalPrincipal};
+use serde::Deserialize;
+
+/// Finite host policy applied before parsing or retaining remotely influenced
+/// OIDC material.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VerifierLimits {
+    pub max_id_token_bytes: usize,
+    pub max_jwks_bytes: usize,
+    pub max_jwk_count: usize,
+}
+
+/// Trusted host configuration for one verifier instance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VerifierConfig<'a> {
+    pub expected_issuer: &'a str,
+    pub expected_client_id: &'a str,
+    pub limits: VerifierLimits,
+}
+
+/// Host-owned nonce policy for one ID-token verification operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NonceExpectation<'a> {
+    /// Reject any token that carries a nonce.
+    Absent,
+    /// Require the token nonce to equal this value exactly.
+    Exact(&'a str),
+}
+
+/// Input category rejected at an explicit byte bound.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BoundedInput {
+    IdToken,
+    Jwks,
+}
+
+/// Adapter-local diagnostics. These variants are not portable RunenOnline
+/// authentication semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerificationError {
+    InvalidConfiguration,
+    InputTooLarge(BoundedInput),
+    MalformedJwks,
+    UnsupportedJwk,
+    MalformedToken,
+    UnsupportedTokenProfile,
+    VerificationFailed,
+    PrincipalRejected(AuthorityError),
+}
+
+impl fmt::Display for VerificationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidConfiguration => {
+                formatter.write_str("invalid OIDC verifier configuration")
+            }
+            Self::InputTooLarge(BoundedInput::IdToken) => {
+                formatter.write_str("ID token exceeds configured byte bound")
+            }
+            Self::InputTooLarge(BoundedInput::Jwks) => {
+                formatter.write_str("JWKS exceeds configured byte bound")
+            }
+            Self::MalformedJwks => formatter.write_str("malformed JWKS"),
+            Self::UnsupportedJwk => formatter.write_str("unsupported JWK profile"),
+            Self::MalformedToken => formatter.write_str("malformed ID token"),
+            Self::UnsupportedTokenProfile => formatter.write_str("unsupported ID-token profile"),
+            Self::VerificationFailed => formatter.write_str("ID-token verification failed"),
+            Self::PrincipalRejected(_) => {
+                formatter.write_str("RunenOnline rejected the verified external principal")
+            }
+        }
+    }
+}
+
+impl std::error::Error for VerificationError {}
+
+/// Static-JWKS verifier for the bounded first RO4 OIDC profile.
+pub struct OidcVerifier {
+    expected_issuer: Box<str>,
+    expected_client_id: Box<str>,
+    max_id_token_bytes: usize,
+    keys_by_id: BTreeMap<Box<str>, DecodingKey>,
+}
+
+impl OidcVerifier {
+    /// Constructs a verifier from trusted host configuration and a bounded,
+    /// already-obtained JWKS document.
+    pub fn new(config: VerifierConfig<'_>, jwks_json: &[u8]) -> Result<Self, VerificationError> {
+        if config.expected_issuer.is_empty()
+            || config.expected_client_id.is_empty()
+            || config.limits.max_id_token_bytes == 0
+            || config.limits.max_jwks_bytes == 0
+            || config.limits.max_jwk_count == 0
+        {
+            return Err(VerificationError::InvalidConfiguration);
+        }
+        if jwks_json.len() > config.limits.max_jwks_bytes {
+            return Err(VerificationError::InputTooLarge(BoundedInput::Jwks));
+        }
+
+        let jwks: JwkSet =
+            serde_json::from_slice(jwks_json).map_err(|_| VerificationError::MalformedJwks)?;
+        if jwks.keys.is_empty() || jwks.keys.len() > config.limits.max_jwk_count {
+            return Err(VerificationError::InvalidConfiguration);
+        }
+
+        let mut keys_by_id = BTreeMap::new();
+        for jwk in &jwks.keys {
+            require_rs256_verification_jwk(jwk)?;
+            let key_id = jwk
+                .common
+                .key_id
+                .as_deref()
+                .filter(|key_id| !key_id.is_empty())
+                .ok_or(VerificationError::UnsupportedJwk)?;
+            let decoding_key =
+                DecodingKey::from_jwk(jwk).map_err(|_| VerificationError::UnsupportedJwk)?;
+            require_rs256_public_key_shape(&decoding_key)?;
+            if keys_by_id
+                .insert(Box::<str>::from(key_id), decoding_key)
+                .is_some()
+            {
+                return Err(VerificationError::InvalidConfiguration);
+            }
+        }
+
+        Ok(Self {
+            expected_issuer: config.expected_issuer.into(),
+            expected_client_id: config.expected_client_id.into(),
+            max_id_token_bytes: config.limits.max_id_token_bytes,
+            keys_by_id,
+        })
+    }
+
+    /// Verifies one bounded ID token at an explicit host-supplied authentication
+    /// time and hands the verified issuer/subject pair to the owning authority.
+    ///
+    /// `verification_time` is OIDC realization time only. It is not converted
+    /// into RunenOnline `TrustedTime` and carries no Assignment, AdmissionGrant,
+    /// or matchmaking deadline authority.
+    pub fn verify(
+        &self,
+        authority: &Authority,
+        raw_id_token: &str,
+        nonce: NonceExpectation<'_>,
+        verification_time: SystemTime,
+    ) -> Result<VerifiedExternalPrincipal, VerificationError> {
+        if raw_id_token.len() > self.max_id_token_bytes {
+            return Err(VerificationError::InputTooLarge(BoundedInput::IdToken));
+        }
+
+        let header = decode_header(raw_id_token).map_err(|_| VerificationError::MalformedToken)?;
+        require_token_header_profile(&header)?;
+        let key_id = header
+            .kid
+            .as_deref()
+            .filter(|key_id| !key_id.is_empty())
+            .ok_or(VerificationError::UnsupportedTokenProfile)?;
+        let decoding_key = self
+            .keys_by_id
+            .get(key_id)
+            .ok_or(VerificationError::UnsupportedTokenProfile)?;
+
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.leeway = 0;
+        // jsonwebtoken validates expiration against its own wall clock. RO4B
+        // instead requires the explicit trusted host value supplied above, so
+        // only that library-internal time check is disabled. Presence and the
+        // exact comparison are enforced below after signature verification.
+        validation.validate_exp = false;
+        validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
+        validation.set_issuer(&[self.expected_issuer.as_ref()]);
+        validation.set_audience(&[self.expected_client_id.as_ref()]);
+
+        let claims = decode::<IdTokenClaims>(raw_id_token, decoding_key, &validation)
+            .map_err(|_| VerificationError::VerificationFailed)?
+            .claims;
+
+        if claims.iss != self.expected_issuer.as_ref() || claims.sub.is_empty() {
+            return Err(VerificationError::VerificationFailed);
+        }
+        match &claims.aud {
+            Audience::Single(audience) if audience == self.expected_client_id.as_ref() => {}
+            Audience::Multiple(audiences)
+                if audiences.len() == 1 && audiences[0] == self.expected_client_id.as_ref() => {}
+            Audience::Multiple(audiences) if audiences.len() > 1 => {
+                return Err(VerificationError::UnsupportedTokenProfile);
+            }
+            Audience::Single(_) | Audience::Multiple(_) => {
+                return Err(VerificationError::VerificationFailed);
+            }
+        }
+
+        require_unexpired(verification_time, claims.exp)?;
+        if !claims.iat.is_finite() {
+            return Err(VerificationError::VerificationFailed);
+        }
+
+        match (nonce, claims.nonce.as_deref()) {
+            (NonceExpectation::Absent, None) => {}
+            (NonceExpectation::Exact(expected), Some(actual)) if expected == actual => {}
+            _ => return Err(VerificationError::VerificationFailed),
+        }
+
+        authority
+            .accept_verified_external_principal(claims.iss.as_bytes(), claims.sub.as_bytes())
+            .map_err(VerificationError::PrincipalRejected)
+    }
+}
+
+fn require_token_header_profile(header: &jsonwebtoken::Header) -> Result<(), VerificationError> {
+    if header.alg != Algorithm::RS256 || header.crit.is_some() {
+        return Err(VerificationError::UnsupportedTokenProfile);
+    }
+    Ok(())
+}
+
+fn require_rs256_verification_jwk(jwk: &jsonwebtoken::jwk::Jwk) -> Result<(), VerificationError> {
+    if !matches!(jwk.algorithm, AlgorithmParameters::RSA(_)) {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+    if let Some(algorithm) = jwk.common.key_algorithm
+        && algorithm != KeyAlgorithm::RS256
+    {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+    if let Some(key_use) = &jwk.common.public_key_use
+        && key_use != &PublicKeyUse::Signature
+    {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+    if let Some(operations) = &jwk.common.key_operations
+        && (operations.is_empty()
+            || operations
+                .iter()
+                .any(|operation| operation != &KeyOperations::Verify))
+    {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+    Ok(())
+}
+
+fn require_rs256_public_key_shape(key: &DecodingKey) -> Result<(), VerificationError> {
+    let DecodingKeyKind::RsaModulusExponent { n, e } = key.kind() else {
+        return Err(VerificationError::UnsupportedJwk);
+    };
+
+    let modulus_bits = canonical_unsigned_bit_len(n).ok_or(VerificationError::UnsupportedJwk)?;
+    if !(2048..=8192).contains(&modulus_bits) || n.last().is_none_or(|byte| byte & 1 == 0) {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+
+    canonical_unsigned_bit_len(e).ok_or(VerificationError::UnsupportedJwk)?;
+    let exponent_at_least_three = e.len() > 1 || e.first().is_some_and(|byte| *byte >= 3);
+    if !exponent_at_least_three
+        || e.last().is_none_or(|byte| byte & 1 == 0)
+        || !unsigned_big_endian_less_than(e, n)
+    {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+
+    Ok(())
+}
+
+fn canonical_unsigned_bit_len(bytes: &[u8]) -> Option<usize> {
+    let first = *bytes.first()?;
+    if first == 0 {
+        return (bytes.len() == 1).then_some(0);
+    }
+    Some((bytes.len() - 1) * 8 + (8 - first.leading_zeros() as usize))
+}
+
+fn unsigned_big_endian_less_than(left: &[u8], right: &[u8]) -> bool {
+    left.len() < right.len() || (left.len() == right.len() && left < right)
+}
+
+fn require_unexpired(
+    verification_time: SystemTime,
+    expiration: f64,
+) -> Result<(), VerificationError> {
+    if !expiration.is_finite() {
+        return Err(VerificationError::VerificationFailed);
+    }
+    let verification_seconds = verification_time
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| VerificationError::VerificationFailed)?
+        .as_secs_f64();
+    if verification_seconds >= expiration {
+        return Err(VerificationError::VerificationFailed);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct IdTokenClaims {
+    iss: String,
+    sub: String,
+    aud: Audience,
+    exp: f64,
+    iat: f64,
+    #[serde(default)]
+    nonce: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Audience {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn verifier_rejects_rsa_modulus_below_jwa_minimum() {
+        let weak_jwks = br#"{"keys":[{"kty":"RSA","kid":"weak","use":"sig","alg":"RS256","n":"AQ","e":"AQAB"}]}"#;
+        let result = OidcVerifier::new(
+            VerifierConfig {
+                expected_issuer: "https://issuer.example",
+                expected_client_id: "client-1",
+                limits: VerifierLimits {
+                    max_id_token_bytes: 4096,
+                    max_jwks_bytes: 4096,
+                    max_jwk_count: 1,
+                },
+            },
+            weak_jwks,
+        );
+
+        assert!(matches!(result, Err(VerificationError::UnsupportedJwk)));
+    }
+
+    #[test]
+    fn verifier_rejects_invalid_rsa_public_key_shape_before_activation() {
+        let mut modulus = vec![0x80; 256];
+        *modulus.last_mut().unwrap() = 0x81;
+
+        let invalid_exponent = DecodingKey::from_rsa_raw_components(&modulus, &[1]);
+        assert_eq!(
+            require_rs256_public_key_shape(&invalid_exponent),
+            Err(VerificationError::UnsupportedJwk)
+        );
+
+        let mut oversized_modulus = vec![0x80; 1025];
+        *oversized_modulus.last_mut().unwrap() = 0x81;
+        let oversized = DecodingKey::from_rsa_raw_components(&oversized_modulus, &[1, 0, 1]);
+        assert_eq!(
+            require_rs256_public_key_shape(&oversized),
+            Err(VerificationError::UnsupportedJwk)
+        );
+    }
+
+    #[test]
+    fn verifier_rejects_critical_jose_extensions() {
+        let mut header = jsonwebtoken::Header::new(Algorithm::RS256);
+        header.crit = Some(vec!["example-extension".to_owned()]);
+
+        assert_eq!(
+            require_token_header_profile(&header),
+            Err(VerificationError::UnsupportedTokenProfile)
+        );
+    }
+
+    #[test]
+    fn numeric_dates_accept_fractional_seconds_and_preserve_expiry_boundary() {
+        let claims: IdTokenClaims = serde_json::from_str(
+            r#"{"iss":"https://issuer.example","sub":"player-123","aud":"client-1","exp":200.5,"iat":100.25}"#,
+        )
+        .unwrap();
+
+        assert_eq!(claims.exp, 200.5);
+        assert_eq!(claims.iat, 100.25);
+        assert!(require_unexpired(UNIX_EPOCH + Duration::from_millis(200_499), claims.exp).is_ok());
+        assert_eq!(
+            require_unexpired(UNIX_EPOCH + Duration::from_millis(200_500), claims.exp),
+            Err(VerificationError::VerificationFailed)
+        );
+    }
+}
