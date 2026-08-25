@@ -236,6 +236,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "runen-net"
+version = "0.1.0"
+source = "git+https://github.com/dornglut/runen-net?rev=79a455945fe85933cbd2a74145a20f296f86f55c#79a455945fe85933cbd2a74145a20f296f86f55c"
+
+[[package]]
 name = "runen-online"
 version = "0.1.0"
 
@@ -247,6 +252,14 @@ dependencies = [
  "runen-online",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "runen-online-runen-net-proof"
+version = "0.0.0"
+dependencies = [
+ "runen-net",
+ "runen-online",
 ]
 
 [[package]]
