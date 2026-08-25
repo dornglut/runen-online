@@ -1,4 +1,4 @@
-use crate::{AssignmentId, AuthorityDomainHandle};
+use crate::AssignmentId;
 
 /// Host-local reference to one logical gameplay destination.
 ///
@@ -26,18 +26,18 @@ pub enum AssignmentState {
     Ended,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssignmentView {
     id: AssignmentId,
     state: AssignmentState,
 }
 
 impl AssignmentView {
-    pub const fn id(self) -> AssignmentId {
-        self.id
+    pub const fn id(&self) -> &AssignmentId {
+        &self.id
     }
 
-    pub const fn state(self) -> AssignmentState {
+    pub const fn state(&self) -> AssignmentState {
         self.state
     }
 
@@ -52,7 +52,7 @@ pub enum AssignmentResolutionOutcome {
     AlreadyUsable,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct AssignmentRecord {
     pub id: AssignmentId,
     pub state: AssignmentState,
@@ -76,11 +76,7 @@ impl AssignmentRecord {
         }
     }
 
-    pub(crate) const fn domain(self) -> AuthorityDomainHandle {
-        self.id.domain()
-    }
-
-    pub(crate) const fn view(self) -> AssignmentView {
-        AssignmentView::new(self.id, self.state)
+    pub(crate) fn view(&self) -> AssignmentView {
+        AssignmentView::new(self.id.clone(), self.state)
     }
 }
