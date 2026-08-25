@@ -2,7 +2,7 @@
 
 RunenOnline is a standalone, provider-neutral Rust framework for online-game control-plane semantics outside the realtime multiplayer networking core.
 
-Maturity: provisional pre-1.0 authority and interfaces; semantics and public APIs are not yet stable.
+Maturity: [provisional pre-1.0](MATURITY.md). The accepted specification is provisional semantic authority; public Rust APIs and cross-release compatibility are not yet stable commitments.
 
 RunenNet is a sibling standalone framework for realtime multiplayer networking. Runenwerk and game/server applications are downstream consumers and integration hosts, not RunenOnline semantic authority.
 
