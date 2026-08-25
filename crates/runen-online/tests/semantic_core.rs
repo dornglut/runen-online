@@ -166,22 +166,28 @@ fn player_capacity_rejects_without_advancing_successful_identity_sequence() {
 
 #[test]
 fn pending_assignment_resolves_once_and_expiry_is_irreversible() {
-    let mut authority = authority();
-    let now = at(&authority, 1);
-    let assignment = authority.establish_pending_assignment(&now, 5).unwrap();
+    let mut active_authority = authority();
+    let now = at(&active_authority, 1);
+    let assignment = active_authority
+        .establish_pending_assignment(&now, 5)
+        .unwrap();
     let destination = LogicalDestinationHandle::new(7);
 
-    let before = at(&authority, 4);
+    let before = at(&active_authority, 4);
     assert_eq!(
-        authority.resolve_assignment(&assignment, destination, &before),
+        active_authority.resolve_assignment(&assignment, destination, &before),
         Ok(AssignmentResolutionOutcome::Resolved)
     );
     assert_eq!(
-        authority.resolve_assignment(&assignment, destination, &before),
+        active_authority.resolve_assignment(&assignment, destination, &before),
         Ok(AssignmentResolutionOutcome::AlreadyUsable)
     );
     assert_eq!(
-        authority.resolve_assignment(&assignment, LogicalDestinationHandle::new(8), &before,),
+        active_authority.resolve_assignment(
+            &assignment,
+            LogicalDestinationHandle::new(8),
+            &before,
+        ),
         Err(AuthorityError::Conflict)
     );
 
