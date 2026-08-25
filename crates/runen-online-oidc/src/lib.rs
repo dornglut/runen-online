@@ -212,17 +212,10 @@ impl OidcVerifier {
             }
         }
 
-        let verification_seconds = verification_time
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| VerificationError::VerificationFailed)?
-            .as_secs();
-        if verification_seconds >= claims.exp {
+        require_unexpired(verification_time, claims.exp)?;
+        if !claims.iat.is_finite() {
             return Err(VerificationError::VerificationFailed);
         }
-
-        // `iat` is required by the OIDC ID-token profile. Deserializing this
-        // concrete field above establishes presence and numeric representation.
-        let _issued_at = claims.iat;
 
         match (nonce, claims.nonce.as_deref()) {
             (NonceExpectation::Absent, None) => {}
@@ -283,13 +276,30 @@ fn require_rs256_modulus_size(key: &DecodingKey) -> Result<(), VerificationError
     Ok(())
 }
 
+fn require_unexpired(
+    verification_time: SystemTime,
+    expiration: f64,
+) -> Result<(), VerificationError> {
+    if !expiration.is_finite() {
+        return Err(VerificationError::VerificationFailed);
+    }
+    let verification_seconds = verification_time
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| VerificationError::VerificationFailed)?
+        .as_secs_f64();
+    if verification_seconds >= expiration {
+        return Err(VerificationError::VerificationFailed);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 struct IdTokenClaims {
     iss: String,
     sub: String,
     aud: Audience,
-    exp: u64,
-    iat: u64,
+    exp: f64,
+    iat: f64,
     #[serde(default)]
     nonce: Option<String>,
 }
@@ -303,6 +313,8 @@ enum Audience {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     #[test]
@@ -332,6 +344,24 @@ mod tests {
         assert_eq!(
             require_token_header_profile(&header),
             Err(VerificationError::UnsupportedTokenProfile)
+        );
+    }
+
+    #[test]
+    fn numeric_dates_accept_fractional_seconds_and_preserve_expiry_boundary() {
+        let claims: IdTokenClaims = serde_json::from_str(
+            r#"{"iss":"https://issuer.example","sub":"player-123","aud":"client-1","exp":200.5,"iat":100.25}"#,
+        )
+        .unwrap();
+
+        assert_eq!(claims.exp, 200.5);
+        assert_eq!(claims.iat, 100.25);
+        assert!(
+            require_unexpired(UNIX_EPOCH + Duration::from_millis(200_499), claims.exp).is_ok()
+        );
+        assert_eq!(
+            require_unexpired(UNIX_EPOCH + Duration::from_millis(200_500), claims.exp),
+            Err(VerificationError::VerificationFailed)
         );
     }
 }
