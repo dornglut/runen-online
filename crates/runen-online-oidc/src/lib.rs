@@ -203,8 +203,15 @@ impl OidcVerifier {
         }
         match &claims.aud {
             Audience::Single(audience) if audience == self.expected_client_id.as_ref() => {}
-            Audience::Single(_) => return Err(VerificationError::VerificationFailed),
-            Audience::Multiple(_) => return Err(VerificationError::UnsupportedTokenProfile),
+            Audience::Multiple(audiences)
+                if audiences.len() == 1
+                    && audiences[0] == self.expected_client_id.as_ref() => {}
+            Audience::Multiple(audiences) if audiences.len() > 1 => {
+                return Err(VerificationError::UnsupportedTokenProfile);
+            }
+            Audience::Single(_) | Audience::Multiple(_) => {
+                return Err(VerificationError::VerificationFailed);
+            }
         }
 
         let verification_seconds = verification_time
