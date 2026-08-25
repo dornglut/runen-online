@@ -171,9 +171,7 @@ impl OidcVerifier {
         }
 
         let header = decode_header(raw_id_token).map_err(|_| VerificationError::MalformedToken)?;
-        if header.alg != Algorithm::RS256 {
-            return Err(VerificationError::UnsupportedTokenProfile);
-        }
+        require_token_header_profile(&header)?;
         let key_id = header
             .kid
             .as_deref()
@@ -236,6 +234,13 @@ impl OidcVerifier {
             .accept_verified_external_principal(claims.iss.as_bytes(), claims.sub.as_bytes())
             .map_err(VerificationError::PrincipalRejected)
     }
+}
+
+fn require_token_header_profile(header: &jsonwebtoken::Header) -> Result<(), VerificationError> {
+    if header.alg != Algorithm::RS256 || header.crit.is_some() {
+        return Err(VerificationError::UnsupportedTokenProfile);
+    }
+    Ok(())
 }
 
 fn require_rs256_verification_jwk(jwk: &jsonwebtoken::jwk::Jwk) -> Result<(), VerificationError> {
@@ -317,5 +322,16 @@ mod tests {
         );
 
         assert!(matches!(result, Err(VerificationError::UnsupportedJwk)));
+    }
+
+    #[test]
+    fn verifier_rejects_critical_jose_extensions() {
+        let mut header = jsonwebtoken::Header::new(Algorithm::RS256);
+        header.crit = Some(vec!["example-extension".to_owned()]);
+
+        assert_eq!(
+            require_token_header_profile(&header),
+            Err(VerificationError::UnsupportedTokenProfile)
+        );
     }
 }
