@@ -1,7 +1,7 @@
 use runen_online::{
     AssignmentState, AssociationOutcome, Authority, AuthorityDomainHandle, AuthorityError,
-    AuthorityLimits, InvalidInputKind, LogicalDestinationHandle, MatchRequestState,
-    ResourceLimit, TimeDomainHandle, TrustedTime,
+    AuthorityLimits, InvalidInputKind, LogicalDestinationHandle, MatchRequestState, ResourceLimit,
+    TimeDomainHandle, TrustedTime,
 };
 
 fn limits() -> AuthorityLimits {
@@ -100,11 +100,7 @@ fn conflicting_assignment_resolution_preserves_fixed_destination() {
         .resolve_assignment(&assignment, fixed, &later)
         .unwrap();
     assert_eq!(
-        authority.resolve_assignment(
-            &assignment,
-            LogicalDestinationHandle::new(8),
-            &later,
-        ),
+        authority.resolve_assignment(&assignment, LogicalDestinationHandle::new(8), &later,),
         Err(AuthorityError::Conflict)
     );
     assert_eq!(
@@ -143,7 +139,10 @@ fn match_request_expiry_is_irreversible_under_lower_observation() {
 
     let boundary = at(&authority, 5);
     assert_eq!(
-        authority.match_request(&request, &boundary).unwrap().state(),
+        authority
+            .match_request(&request, &boundary)
+            .unwrap()
+            .state(),
         MatchRequestState::Ended
     );
 
