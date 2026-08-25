@@ -1,47 +1,139 @@
+use std::{
+    cmp::Ordering,
+    fmt,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
+
 use crate::{AuthorityError, IdKind};
 
-/// Local handle identifying one in-process RunenOnline authority domain.
-///
-/// This is deliberately not a standardized realm, provider, deployment, wire,
-/// or storage identifier.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub struct AuthorityDomainHandle(u64);
+#[derive(Debug)]
+struct DomainMarker {
+    _identity_byte: u8,
+}
 
-impl AuthorityDomainHandle {
-    pub const fn new(local_value: u64) -> Self {
-        Self(local_value)
+/// Process-local identity token whose equality is allocation identity rather
+/// than caller-chosen numeric data.
+///
+/// Every semantic ID keeps an `Arc` to this marker, so a stale ID keeps its
+/// domain token alive and the allocator cannot recycle that token's address
+/// while the stale ID still exists.
+#[derive(Clone)]
+struct DomainIdentity(Arc<DomainMarker>);
+
+impl DomainIdentity {
+    fn fresh() -> Self {
+        Self(Arc::new(DomainMarker { _identity_byte: 0 }))
     }
 
-    pub const fn local_value(self) -> u64 {
-        self.0
+    fn address(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
     }
 }
 
+impl fmt::Debug for DomainIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("DomainIdentity")
+            .field(&self.address())
+            .finish()
+    }
+}
+
+impl PartialEq for DomainIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for DomainIdentity {}
+
+impl PartialOrd for DomainIdentity {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DomainIdentity {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.address().cmp(&other.address())
+    }
+}
+
+impl Hash for DomainIdentity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.address().hash(state);
+    }
+}
+
+/// Linear construction capability for one in-process RunenOnline authority
+/// domain.
+///
+/// `AuthorityDomainHandle` is deliberately not `Clone` or `Copy`. Constructing
+/// an `Authority` consumes the handle, which prevents safe code from creating
+/// two independent authority aggregates that mint colliding semantic IDs for
+/// the same domain token. Create a fresh handle for a distinct authority
+/// domain.
+///
+/// This is an implementation-local capability. It is not a standardized realm,
+/// provider, deployment, wire, or storage identifier.
+#[derive(Debug)]
+pub struct AuthorityDomainHandle {
+    identity: DomainIdentity,
+}
+
+impl AuthorityDomainHandle {
+    pub fn new() -> Self {
+        Self {
+            identity: DomainIdentity::fresh(),
+        }
+    }
+
+    pub fn id(&self) -> AuthorityDomainId {
+        AuthorityDomainId(self.identity.clone())
+    }
+
+    pub(crate) fn into_id(self) -> AuthorityDomainId {
+        AuthorityDomainId(self.identity)
+    }
+}
+
+impl Default for AuthorityDomainHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Comparable process-local identity of an established authority domain.
+///
+/// This value can be cloned and carried by semantic IDs, but it cannot be used
+/// to construct another `Authority`; construction requires the linear
+/// `AuthorityDomainHandle` capability above.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AuthorityDomainId(DomainIdentity);
+
 macro_rules! semantic_id {
     ($name:ident) => {
-        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name {
-            domain: AuthorityDomainHandle,
+            domain: AuthorityDomainId,
             local_value: u64,
         }
 
         impl $name {
-            pub const fn domain(self) -> AuthorityDomainHandle {
-                self.domain
+            pub fn domain(&self) -> &AuthorityDomainId {
+                &self.domain
             }
 
             /// Returns the local implementation incarnation value.
             ///
             /// This value has meaning only together with `domain()` and does
             /// not establish a wire or storage representation.
-            pub const fn local_value(self) -> u64 {
+            pub const fn local_value(&self) -> u64 {
                 self.local_value
             }
 
-            pub(crate) const fn from_parts(
-                domain: AuthorityDomainHandle,
-                local_value: u64,
-            ) -> Self {
+            pub(crate) fn from_parts(domain: AuthorityDomainId, local_value: u64) -> Self {
                 Self {
                     domain,
                     local_value,
@@ -61,14 +153,14 @@ semantic_id!(MatchId);
 /// host boundary of one authority domain.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedExternalPrincipal {
-    domain: AuthorityDomainHandle,
+    domain: AuthorityDomainId,
     authority: Box<[u8]>,
     subject: Box<[u8]>,
 }
 
 impl VerifiedExternalPrincipal {
-    pub const fn domain(&self) -> AuthorityDomainHandle {
-        self.domain
+    pub fn domain(&self) -> &AuthorityDomainId {
+        &self.domain
     }
 
     pub fn authority(&self) -> &[u8] {
@@ -79,11 +171,7 @@ impl VerifiedExternalPrincipal {
         &self.subject
     }
 
-    pub(crate) fn new(
-        domain: AuthorityDomainHandle,
-        authority: &[u8],
-        subject: &[u8],
-    ) -> Self {
+    pub(crate) fn new(domain: AuthorityDomainId, authority: &[u8], subject: &[u8]) -> Self {
         Self {
             domain,
             authority: authority.into(),
@@ -139,9 +227,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn same_local_value_in_different_domains_is_not_equal() {
-        let left = PlayerId::from_parts(AuthorityDomainHandle::new(1), 7);
-        let right = PlayerId::from_parts(AuthorityDomainHandle::new(2), 7);
+    fn independently_constructed_domains_cannot_compare_equal() {
+        let left_domain = AuthorityDomainHandle::new().into_id();
+        let right_domain = AuthorityDomainHandle::new().into_id();
+        let left = PlayerId::from_parts(left_domain, 7);
+        let right = PlayerId::from_parts(right_domain, 7);
 
         assert_ne!(left, right);
         assert_eq!(left.local_value(), right.local_value());
