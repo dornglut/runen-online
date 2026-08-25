@@ -35,18 +35,21 @@ A provider adapter may expose provider capabilities or limitations, but it MUST 
 
 ## Implementation packages
 
-RO0 intentionally does not ratify a product crate or multi-service topology.
+RO2 establishes exactly one product library crate: `crates/runen-online`.
 
-Creating identity, auth, lobby, matchmaking, allocation, persistence, server, protocol, adapter, or provider crates/services before independent ownership is demonstrated would make package shape precede semantic and operational evidence.
+That crate realizes the accepted provider-neutral semantic core. Its internal identity, time, assignment, admission, matchmaking, limit, error, or orchestration modules are implementation organization only and do not establish separate package or service ownership.
 
-Later implementation work may introduce only the minimum package decomposition justified by accepted semantics, build/dependency boundaries, deployment obligations, or independently reusable adapters.
+RunenOnline does not currently ratify a multi-service topology, persistence package, provider package, runtime package, protocol package, or sibling-framework integration package. Creating identity, auth, lobby, matchmaking, allocation, persistence, server, protocol, adapter, provider, or service crates merely from semantic naming would make package shape precede independent build, dependency, deployment, or reuse evidence.
+
+Later implementation work may split or add packages only when accepted semantics and concrete build/dependency boundaries, deployment obligations, or independently reusable adapter/integration evidence justify that ownership.
 
 ## Top-level artifact areas
 
 - `spec/` — normative RunenOnline specification artifacts;
 - `docs/` — non-normative architecture, verification, decisions, research, and guides when real material exists;
+- `crates/runen-online/` — the standalone provider-neutral product core;
 - `tools/` — repository tooling only;
-- future `crates/` or application/service packages — product implementation only after package ownership is accepted;
+- future additional `crates/` or application/service packages — only after separate package ownership is accepted;
 - future `examples/` — standalone proofs and consumer-facing examples when required by accepted work.
 
 ## Integration boundary
