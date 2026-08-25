@@ -78,22 +78,27 @@ impl Authority {
         let mut trusted = BTreeSet::new();
         let mut supplied_count = 0usize;
 
-        for authority in trusted_external_authorities {
-            if supplied_count >= limits.max_trusted_external_authorities {
-                return Err(AuthorityError::ResourceLimit(
-                    ResourceLimit::TrustedExternalAuthorities,
-                ));
-            }
-            supplied_count += 1;
+        trusted_external_authorities
+            .into_iter()
+            .try_for_each(|authority| {
+                if supplied_count >= limits.max_trusted_external_authorities {
+                    return Err(AuthorityError::ResourceLimit(
+                        ResourceLimit::TrustedExternalAuthorities,
+                    ));
+                }
+                supplied_count = supplied_count.checked_add(1).ok_or(
+                    AuthorityError::ResourceLimit(ResourceLimit::TrustedExternalAuthorities),
+                )?;
 
-            let authority = authority.as_ref();
-            if authority.len() > limits.max_external_authority_bytes {
-                return Err(AuthorityError::ResourceLimit(
-                    ResourceLimit::ExternalAuthorityBytes,
-                ));
-            }
-            trusted.insert(authority.into());
-        }
+                let authority = authority.as_ref();
+                if authority.len() > limits.max_external_authority_bytes {
+                    return Err(AuthorityError::ResourceLimit(
+                        ResourceLimit::ExternalAuthorityBytes,
+                    ));
+                }
+                trusted.insert(authority.into());
+                Ok(())
+            })?;
 
         Ok(Self {
             domain: domain.into_id(),
