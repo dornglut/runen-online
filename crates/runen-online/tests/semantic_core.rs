@@ -183,11 +183,8 @@ fn pending_assignment_resolves_once_and_expiry_is_irreversible() {
         Ok(AssignmentResolutionOutcome::AlreadyUsable)
     );
     assert_eq!(
-        active_authority.resolve_assignment(
-            &assignment,
-            LogicalDestinationHandle::new(8),
-            &before,
-        ),
+        active_authority
+            .resolve_assignment(&assignment, LogicalDestinationHandle::new(8), &before,),
         Err(AuthorityError::Conflict)
     );
 
