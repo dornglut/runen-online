@@ -155,13 +155,15 @@ mod tests {
                 ResourceLimit::AdmissionGrantLifetime
             ))
         );
-        assert!(validate_deadline(
-            &now,
-            &domain,
-            u64::MAX,
-            5,
-            ResourceLimit::AdmissionGrantLifetime,
-        )
-        .is_ok());
+        assert!(
+            validate_deadline(
+                &now,
+                &domain,
+                u64::MAX,
+                5,
+                ResourceLimit::AdmissionGrantLifetime,
+            )
+            .is_ok()
+        );
     }
 }
