@@ -18,7 +18,7 @@ use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::jwk::{AlgorithmParameters, JwkSet, KeyAlgorithm, KeyOperations, PublicKeyUse};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
+use jsonwebtoken::{Algorithm, DecodingKey, DecodingKeyKind, Validation, decode, decode_header};
 use runen_online::{Authority, AuthorityError, VerifiedExternalPrincipal};
 use serde::Deserialize;
 
@@ -136,6 +136,7 @@ impl OidcVerifier {
                 .ok_or(VerificationError::UnsupportedJwk)?;
             let decoding_key =
                 DecodingKey::from_jwk(jwk).map_err(|_| VerificationError::UnsupportedJwk)?;
+            require_rs256_modulus_size(&decoding_key)?;
             if keys_by_id
                 .insert(Box::<str>::from(key_id), decoding_key)
                 .is_some()
@@ -262,6 +263,21 @@ fn require_rs256_verification_jwk(jwk: &jsonwebtoken::jwk::Jwk) -> Result<(), Ve
     Ok(())
 }
 
+fn require_rs256_modulus_size(key: &DecodingKey) -> Result<(), VerificationError> {
+    let DecodingKeyKind::RsaModulusExponent { n, .. } = key.kind() else {
+        return Err(VerificationError::UnsupportedJwk);
+    };
+    let first_nonzero = n
+        .iter()
+        .position(|byte| *byte != 0)
+        .ok_or(VerificationError::UnsupportedJwk)?;
+    let significant = &n[first_nonzero..];
+    if significant.len() < 256 || (significant.len() == 256 && significant[0] < 0x80) {
+        return Err(VerificationError::UnsupportedJwk);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 struct IdTokenClaims {
     iss: String,
@@ -278,4 +294,28 @@ struct IdTokenClaims {
 enum Audience {
     Single(String),
     Multiple(Vec<String>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verifier_rejects_rsa_modulus_below_jwa_minimum() {
+        let weak_jwks = br#"{"keys":[{"kty":"RSA","kid":"weak","use":"sig","alg":"RS256","n":"AQ","e":"AQAB"}]}"#;
+        let result = OidcVerifier::new(
+            VerifierConfig {
+                expected_issuer: "https://issuer.example",
+                expected_client_id: "client-1",
+                limits: VerifierLimits {
+                    max_id_token_bytes: 4096,
+                    max_jwks_bytes: 4096,
+                    max_jwk_count: 1,
+                },
+            },
+            weak_jwks,
+        );
+
+        assert!(matches!(result, Err(VerificationError::UnsupportedJwk)));
+    }
 }
