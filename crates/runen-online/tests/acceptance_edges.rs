@@ -1,7 +1,7 @@
 use runen_online::{
-    AssignmentState, AssociationOutcome, Authority, AuthorityDomainHandle, AuthorityError,
-    AuthorityLimits, InvalidInputKind, LogicalDestinationHandle, MatchRequestState, ResourceLimit,
-    TimeDomainHandle, TrustedTime,
+    AdmissionGrantState, AssignmentState, AssociationOutcome, Authority, AuthorityDomainHandle,
+    AuthorityError, AuthorityLimits, InvalidInputKind, LogicalDestinationHandle, MatchRequestState,
+    ResourceLimit, TimeDomainHandle, TrustedTime,
 };
 
 fn limits() -> AuthorityLimits {
@@ -150,6 +150,68 @@ fn match_request_expiry_is_irreversible_under_lower_observation() {
     assert_eq!(
         authority.match_request(&request, &lower).unwrap().state(),
         MatchRequestState::Ended
+    );
+}
+
+#[test]
+fn wrong_time_domain_cannot_mutate_existing_deadline_state() {
+    let mut authority = authority();
+    let now = at(&authority, 1);
+    let pending_assignment = authority.establish_pending_assignment(&now, 10).unwrap();
+    let player = authority.create_player().unwrap();
+    let usable_assignment = authority
+        .establish_usable_assignment(LogicalDestinationHandle::new(9))
+        .unwrap();
+    let grant = authority
+        .issue_admission_grant(&player, &usable_assignment, &now, 10)
+        .unwrap();
+    let request = authority
+        .establish_match_request(std::slice::from_ref(&player), b"", &now, 10)
+        .unwrap();
+
+    let wrong_time = TrustedTime::new(TimeDomainHandle::new(), 10);
+    assert_eq!(
+        authority.assignment(&pending_assignment, &wrong_time).err(),
+        Some(AuthorityError::TimeDomainMismatch)
+    );
+    assert_eq!(
+        authority.resolve_assignment(
+            &pending_assignment,
+            LogicalDestinationHandle::new(10),
+            &wrong_time,
+        ),
+        Err(AuthorityError::TimeDomainMismatch)
+    );
+    assert_eq!(
+        authority.redeem_admission_grant(&grant, &wrong_time),
+        Err(AuthorityError::TimeDomainMismatch)
+    );
+    assert_eq!(
+        authority.commit_match(std::slice::from_ref(&request), &wrong_time),
+        Err(AuthorityError::TimeDomainMismatch)
+    );
+
+    let valid_time = at(&authority, 2);
+    assert_eq!(
+        authority
+            .assignment(&pending_assignment, &valid_time)
+            .unwrap()
+            .state(),
+        AssignmentState::Pending { deadline: 10 }
+    );
+    assert_eq!(
+        authority
+            .admission_grant(&grant, &valid_time)
+            .unwrap()
+            .state(),
+        AdmissionGrantState::Redeemable { deadline: 10 }
+    );
+    assert_eq!(
+        authority
+            .match_request(&request, &valid_time)
+            .unwrap()
+            .state(),
+        MatchRequestState::Pending { deadline: 10 }
     );
 }
 

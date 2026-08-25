@@ -1,6 +1,6 @@
 # Repository Testing
 
-This document owns the mechanical repository validation contract. Semantic assurance and conformance strategy belong under `docs/verification/` when introduced.
+This document owns the mechanical repository validation contract. Non-normative semantic evidence for the currently supported surface is mapped in [Supported contract assurance](docs/verification/supported-contracts.md); that evidence does not define RunenOnline semantics.
 
 ## Canonical gate
 

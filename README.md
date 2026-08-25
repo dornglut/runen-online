@@ -14,6 +14,8 @@ RunenNet is a sibling standalone framework for realtime multiplayer networking. 
 - [Repository testing](TESTING.md) — canonical mechanical validation.
 - [Documentation architecture](docs/documentation-architecture.md) — documentation ownership and dependency direction.
 
+Non-normative executable evidence for the currently supported surface is mapped in [Supported contract assurance](docs/verification/supported-contracts.md).
+
 Organization contribution and security defaults are maintained by [`dornglut/.github`](https://github.com/dornglut/.github).
 
 ## License
